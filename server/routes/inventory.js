@@ -1,3 +1,15 @@
+// Middleware allowing inventory management for specific roles or permission
+function allowManageInventory(req, res, next) {
+  try {
+    if (!req.user) return res.status(401).json({ message: 'Non authentifié' });
+    const allowedRoles = new Set(['super_admin', 'company_admin', 'dg']);
+    if (allowedRoles.has(req.user.role)) return next();
+    if (req.user.permissions && req.user.permissions.canManageInventory) return next();
+    return res.status(403).json({ message: 'Permissions insuffisantes' });
+  } catch (e) {
+    return res.status(500).json({ message: 'Erreur d\'autorisation' });
+  }
+}
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Product = require('../models/Product');
@@ -6,6 +18,110 @@ const Store = require('../models/Store');
 const { authenticate, checkStoreAccess, checkPermission } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Static sector templates (can be moved to DB later)
+const SECTOR_TEMPLATES = [
+  {
+    sector: 'generic',
+    label: 'Générique',
+    attributes: [],
+    searchableKeys: [],
+  },
+  {
+    sector: 'retail',
+    label: 'Commerce de détail',
+    attributes: [
+      { key: 'supplier', label: 'Fournisseur', type: 'string' },
+      { key: 'ref', label: 'Référence', type: 'string' },
+      { key: 'promoPrice', label: 'Prix promotionnel', type: 'number' },
+      { key: 'minShelfStock', label: 'Stock minimum en rayon', type: 'number' },
+    ],
+    searchableKeys: ['supplier','ref'],
+  },
+  {
+    sector: 'restaurant',
+    label: 'Restaurant / Café',
+    attributes: [
+      { key: 'ingredients', label: 'Ingrédients', type: 'string' },
+      { key: 'allergens', label: 'Allergènes', type: 'string' },
+      { key: 'prepTime', label: 'Temps de préparation (min)', type: 'number' },
+      { key: 'bomCost', label: 'Coût matière première', type: 'number' },
+      { key: 'recipeRef', label: 'Recette associée', type: 'string' },
+    ],
+    searchableKeys: ['ingredients','allergens'],
+  },
+  {
+    sector: 'fashion',
+    label: 'Mode',
+    attributes: [
+      { key: 'size', label: 'Taille', type: 'string' },
+      { key: 'color', label: 'Couleur', type: 'string' },
+      { key: 'material', label: 'Matière', type: 'string' },
+      { key: 'season', label: 'Saison / Collection', type: 'string' },
+    ],
+    searchableKeys: ['size','color','season'],
+  },
+  {
+    sector: 'electronics',
+    label: 'Électronique / Informatique',
+    attributes: [
+      { key: 'brand', label: 'Marque', type: 'string' },
+      { key: 'model', label: 'Modèle', type: 'string' },
+      { key: 'serialNumber', label: 'Numéro de série', type: 'string' },
+      { key: 'warrantyMonths', label: 'Garantie (mois)', type: 'number' },
+      { key: 'ram', label: 'RAM', type: 'string' },
+      { key: 'storage', label: 'Stockage', type: 'string' },
+      { key: 'cpu', label: 'Processeur', type: 'string' },
+    ],
+    searchableKeys: ['brand','model','serialNumber'],
+  },
+  {
+    sector: 'pharmacy',
+    label: 'Pharmacie',
+    attributes: [
+      { key: 'dci', label: 'DCI', type: 'string' },
+      { key: 'dosage', label: 'Dosage', type: 'string' },
+      { key: 'galenic', label: 'Forme galénique', type: 'string' },
+      { key: 'lot', label: 'Numéro de lot', type: 'string' },
+      { key: 'expiryDate', label: 'Date d\'expiration', type: 'date' },
+    ],
+    searchableKeys: ['dci','dosage','lot'],
+  },
+  {
+    sector: 'grocery',
+    label: 'Supérette',
+    attributes: [
+      { key: 'category', label: 'Catégorie', type: 'string' },
+      { key: 'expiryDate', label: 'Date de péremption', type: 'date' },
+      { key: 'supplier', label: 'Fournisseur', type: 'string' },
+      { key: 'shelfStock', label: 'Stock en rayon', type: 'number' },
+    ],
+    searchableKeys: ['category','supplier'],
+  },
+  {
+    sector: 'beauty',
+    label: 'Beauté',
+    attributes: [
+      { key: 'brand', label: 'Marque', type: 'string' },
+      { key: 'line', label: 'Gamme', type: 'string' },
+      { key: 'keyIngredients', label: 'Ingrédients clés', type: 'string' },
+      { key: 'expiryDate', label: 'Date d\'expiration', type: 'date' },
+      { key: 'variant', label: 'Variante', type: 'string' },
+    ],
+    searchableKeys: ['brand','line','variant'],
+  },
+];
+
+// @route   GET /api/inventory/sectors/templates
+// @desc    Liste des templates sectoriels
+// @access  Private
+router.get('/sectors/templates', authenticate, async (_req, res) => {
+  try {
+    res.json({ templates: SECTOR_TEMPLATES });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur lors de la récupération des templates' });
+  }
+});
 
 // Validation rules
 const productValidation = [
@@ -148,7 +264,7 @@ router.get('/products/:id', authenticate, async (req, res) => {
 // @route   POST /api/inventory/products
 // @desc    Créer un nouveau produit
 // @access  Private
-router.post('/products', authenticate, checkPermission('canManageInventory'), productValidation, async (req, res) => {
+router.post('/products', authenticate, allowManageInventory, productValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -225,7 +341,7 @@ router.post('/products', authenticate, checkPermission('canManageInventory'), pr
 // @route   PUT /api/inventory/products/:id
 // @desc    Mettre à jour un produit
 // @access  Private
-router.put('/products/:id', authenticate, checkPermission('canManageInventory'), productValidation, async (req, res) => {
+router.put('/products/:id', authenticate, allowManageInventory, productValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -283,7 +399,7 @@ router.put('/products/:id', authenticate, checkPermission('canManageInventory'),
 // @route   DELETE /api/inventory/products/:id
 // @desc    Supprimer un produit
 // @access  Private
-router.delete('/products/:id', authenticate, checkPermission('canManageInventory'), async (req, res) => {
+router.delete('/products/:id', authenticate, allowManageInventory, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
@@ -326,7 +442,7 @@ router.delete('/products/:id', authenticate, checkPermission('canManageInventory
 // @route   PUT /api/inventory/products/:id/stock
 // @desc    Mettre à jour le stock d'un produit
 // @access  Private
-router.put('/products/:id/stock', authenticate, checkPermission('canManageInventory'), stockUpdateValidation, async (req, res) => {
+router.put('/products/:id/stock', authenticate, allowManageInventory, stockUpdateValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

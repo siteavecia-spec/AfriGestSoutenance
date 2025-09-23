@@ -9,6 +9,12 @@ const companySchema = new mongoose.Schema({
     maxlength: [100, 'Le nom ne peut pas dépasser 100 caractères'],
     unique: true
   },
+  // Secteur d'activité (multi-secteurs)
+  sector: {
+    type: String,
+    enum: ['generic','retail','restaurant','fashion','electronics','pharmacy','grocery','beauty'],
+    default: 'generic'
+  },
   description: {
     type: String,
     trim: true,

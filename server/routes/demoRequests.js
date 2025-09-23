@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const DemoRequest = require('../models/DemoRequest');
 const { authenticate } = require('../middleware/auth');
+const ReferralCode = require('../models/ReferralCode');
+const ReferralRequest = require('../models/ReferralRequest');
+const Notification = require('../models/Notification');
 
 // @route   POST /api/demo-requests
 // @desc    Créer une nouvelle demande de démo
@@ -16,7 +19,8 @@ router.post('/', async (req, res) => {
       company,
       businessType,
       storeCount,
-      message
+      message,
+      referralCode
     } = req.body;
 
     // Validation des champs requis
@@ -46,12 +50,43 @@ router.post('/', async (req, res) => {
       businessType,
       storeCount,
       message: message || '',
+      referralCode: referralCode?.trim() || undefined,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
       referrer: req.get('Referer')
     });
 
     await demoRequest.save();
+
+    // Si un code parrain est fourni, tenter de l'enregistrer comme demande de parrainage
+    if (referralCode && typeof referralCode === 'string') {
+      const codeDoc = await ReferralCode.findOne({ code: referralCode.trim(), isActive: true });
+      if (codeDoc) {
+        try {
+          await ReferralRequest.create({
+            referralCodeId: codeDoc._id,
+            prospectEmail: email,
+            prospectPhone: phone,
+            companyName: company,
+            demoRequestId: demoRequest._id,
+            status: 'pending',
+          });
+          // Notifier le parrain que son code a été utilisé
+          try {
+            await Notification.create({
+              userId: codeDoc.userId,
+              message: `Votre code parrain a été utilisé par ${email}`,
+              severity: 'info',
+              meta: { demoRequestId: demoRequest._id, referralCode: codeDoc.code },
+            });
+          } catch (e) {
+            console.warn('Notification parrain usage code - échec:', e?.message || e);
+          }
+        } catch (e) {
+          console.warn('Impossible de créer ReferralRequest:', e?.message || e);
+        }
+      }
+    }
 
     // TODO: Envoyer une notification email à l'équipe commerciale
     // TODO: Envoyer un email de confirmation au demandeur

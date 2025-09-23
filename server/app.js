@@ -55,6 +55,7 @@ app.use('/api/proposals', require('./routes/proposals'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api', require('./routes/ecommercePrivate'));
 app.use('/api/public', require('./routes/ecommercePublic'));
+app.use('/api/referrals', require('./routes/referrals'));
 
 // Route de test
 app.get('/api/health', (req, res) => {

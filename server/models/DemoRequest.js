@@ -68,6 +68,13 @@ const demoRequestSchema = new mongoose.Schema({
     maxlength: [1000, 'Le message ne peut pas dépasser 1000 caractères']
   },
 
+  // Code parrain (optionnel)
+  referralCode: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Le code parrain ne peut pas dépasser 20 caractères']
+  },
+
   // Statut de la demande
   status: {
     type: String,
@@ -122,6 +129,7 @@ demoRequestSchema.index({ status: 1 });
 demoRequestSchema.index({ createdAt: -1 });
 demoRequestSchema.index({ priority: 1 });
 demoRequestSchema.index({ resolutionDate: -1 });
+demoRequestSchema.index({ referralCode: 1 });
 
 // Virtual pour le nom complet
 demoRequestSchema.virtual('fullName').get(function() {

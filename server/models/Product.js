@@ -143,6 +143,17 @@ const productSchema = new mongoose.Schema({
     brand: { type: String },
     model: { type: String }
   },
+
+  // Multi-secteurs (optionnel, extensible)
+  sector: {
+    type: String,
+    enum: ['generic','retail','restaurant','fashion','electronics','pharmacy','grocery','beauty'],
+    default: 'generic',
+  },
+  attributes: {
+    type: Object, // EAV-like: { key: any }
+    default: {},
+  },
   
   // Taxes
   tax: {

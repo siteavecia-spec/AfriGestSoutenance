@@ -16,7 +16,10 @@ const companyValidation = [
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Le nom doit contenir entre 2 et 100 caractères'),
   body('email').isEmail().normalizeEmail().withMessage('Email invalide'),
   body('phone').optional().isLength({ min: 8, max: 20 }).withMessage('Numéro de téléphone invalide'),
-  body('legalInfo.legalForm').optional().isIn(['SARL', 'SA', 'SNC', 'EURL', 'Auto-entrepreneur', 'Autre']).withMessage('Forme légale invalide')
+  body('legalInfo.legalForm').optional().isIn(['SARL', 'SA', 'SNC', 'EURL', 'Auto-entrepreneur', 'Autre']).withMessage('Forme légale invalide'),
+  // Optional subscription limits (so we can set store limits at creation)
+  body('subscription.maxStores').optional().isInt({ min: 1, max: 1000 }).withMessage('subscription.maxStores doit être un entier >= 1'),
+  body('subscription.maxUsers').optional().isInt({ min: 1, max: 100000 }).withMessage('subscription.maxUsers doit être un entier >= 1')
 ];
 
 // Update (partial updates allowed)
@@ -24,7 +27,10 @@ const companyUpdateValidation = [
   body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Le nom doit contenir entre 2 et 100 caractères'),
   body('email').optional().isEmail().normalizeEmail().withMessage('Email invalide'),
   body('phone').optional().isLength({ min: 8, max: 20 }).withMessage('Numéro de téléphone invalide'),
-  body('legalInfo.legalForm').optional().isIn(['SARL', 'SA', 'SNC', 'EURL', 'Auto-entrepreneur', 'Autre']).withMessage('Forme légale invalide')
+  body('legalInfo.legalForm').optional().isIn(['SARL', 'SA', 'SNC', 'EURL', 'Auto-entrepreneur', 'Autre']).withMessage('Forme légale invalide'),
+  // Optional subscription limits update with guardrails
+  body('subscription.maxStores').optional().isInt({ min: 1, max: 1000 }).withMessage('subscription.maxStores doit être un entier >= 1'),
+  body('subscription.maxUsers').optional().isInt({ min: 1, max: 100000 }).withMessage('subscription.maxUsers doit être un entier >= 1')
 ];
 
 // @route   GET /api/companies
@@ -69,8 +75,8 @@ router.put(
         return res.status(400).json({ message: 'Données invalides', errors: errors.array() });
       }
 
-      // Seuls super_admin et company_admin peuvent modifier ces paramètres
-      if (!['super_admin', 'company_admin'].includes(req.user.role)) {
+      // Seuls super_admin peuvent modifier ces paramètres
+      if (!['super_admin'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Permissions insuffisantes' });
       }
 
