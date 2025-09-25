@@ -126,7 +126,7 @@ router.get('/sectors/templates', authenticate, async (_req, res) => {
 // Validation rules
 const productValidation = [
   body('name').trim().isLength({ min: 2, max: 200 }).withMessage('Le nom doit contenir entre 2 et 200 caractères'),
-  body('sku').trim().isLength({ min: 2, max: 50 }).withMessage('Le SKU doit contenir entre 2 et 50 caractères'),
+  body('sku').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Le SKU doit contenir entre 2 et 50 caractères'),
   body('pricing.costPrice').isNumeric({ min: 0 }).withMessage('Le prix de revient doit être positif'),
   body('pricing.sellingPrice').isNumeric({ min: 0 }).withMessage('Le prix de vente doit être positif'),
   body('inventory.currentStock').isInt({ min: 0 }).withMessage('Le stock doit être un entier positif'),
@@ -158,13 +158,13 @@ router.get('/products', authenticate, async (req, res) => {
       }
     } else if (req.user.role === 'company_admin') {
       // Company admin peut voir tous les produits de son entreprise
-      query.companyId = req.user.companyId;
+      query.companyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
       if (req.query.storeId) {
         query.storeId = req.query.storeId;
       }
     } else {
       // Store manager et employee ne peuvent voir que les produits de leur boutique
-      query.storeId = req.user.storeId;
+      query.storeId = (req.user.store && req.user.store._id) ? req.user.store._id : req.user.store;
     }
 
     // Filtres optionnels
@@ -238,16 +238,18 @@ router.get('/products/:id', authenticate, async (req, res) => {
     }
 
     // Vérifier l'accès selon le rôle
-    if (req.user.role === 'company_admin' && product.companyId.toString() !== req.user.companyId.toString()) {
-      return res.status(403).json({
-        message: 'Accès refusé à ce produit'
-      });
+    if (req.user.role === 'company_admin') {
+      const userCompanyId = (req.user.company && req.user.company._id) ? req.user.company._id.toString() : (req.user.company ? req.user.company.toString() : undefined);
+      if (!userCompanyId || product.companyId.toString() !== userCompanyId) {
+        return res.status(403).json({ message: 'Accès refusé à ce produit' });
+      }
     }
 
-    if (['store_manager', 'employee'].includes(req.user.role) && product.storeId.toString() !== req.user.storeId.toString()) {
-      return res.status(403).json({
-        message: 'Accès refusé à ce produit'
-      });
+    if (['store_manager', 'employee'].includes(req.user.role)) {
+      const userStoreId = (req.user.store && req.user.store._id) ? req.user.store._id.toString() : (req.user.store ? req.user.store.toString() : undefined);
+      if (!userStoreId || product.storeId.toString() !== userStoreId) {
+        return res.status(403).json({ message: 'Accès refusé à ce produit' });
+      }
     }
 
     res.json({ product });
@@ -279,7 +281,7 @@ router.post('/products', authenticate, allowManageInventory, productValidation, 
     // Déterminer la boutique
     let targetStoreId = storeId;
     if (['store_manager', 'employee'].includes(req.user.role)) {
-      targetStoreId = req.user.storeId;
+      targetStoreId = (req.user.store && req.user.store._id) ? req.user.store._id : req.user.store;
     }
 
     // Vérifier que la boutique existe et est active
@@ -298,9 +300,10 @@ router.post('/products', authenticate, allowManageInventory, productValidation, 
 
     // Vérifier la catégorie si fournie
     if (categoryId) {
+      const userCompanyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
       const category = await Category.findOne({ 
         _id: categoryId, 
-        companyId: req.user.companyId 
+        companyId: userCompanyId 
       });
       if (!category) {
         return res.status(400).json({
@@ -309,9 +312,26 @@ router.post('/products', authenticate, allowManageInventory, productValidation, 
       }
     }
 
+    // Auto-générer SKU si manquant et vérifier pricing
+    const sku = productData.sku || `SKU-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    if (productData?.pricing) {
+      const { costPrice, sellingPrice } = productData.pricing;
+      if (typeof costPrice === 'number' && costPrice < 0) {
+        return res.status(400).json({ message: 'Le prix de revient doit être positif' });
+      }
+      if (typeof sellingPrice === 'number' && sellingPrice < 0) {
+        return res.status(400).json({ message: 'Le prix de vente doit être positif' });
+      }
+      if (typeof costPrice === 'number' && typeof sellingPrice === 'number' && sellingPrice < costPrice) {
+        return res.status(400).json({ message: 'Le prix de vente doit être supérieur ou égal au prix de revient' });
+      }
+    }
+
+    const userCompanyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
     const product = new Product({
       ...productData,
-      companyId: req.user.companyId,
+      sku,
+      companyId: userCompanyId,
       storeId: targetStoreId,
       categoryId,
       createdBy: req.user._id
@@ -359,16 +379,18 @@ router.put('/products/:id', authenticate, allowManageInventory, productValidatio
     }
 
     // Vérifier l'accès
-    if (req.user.role === 'company_admin' && product.companyId.toString() !== req.user.companyId.toString()) {
-      return res.status(403).json({
-        message: 'Accès refusé à ce produit'
-      });
+    if (req.user.role === 'company_admin') {
+      const userCompanyId = (req.user.company && req.user.company._id) ? req.user.company._id.toString() : (req.user.company ? req.user.company.toString() : undefined);
+      if (!userCompanyId || product.companyId.toString() !== userCompanyId) {
+        return res.status(403).json({ message: 'Accès refusé à ce produit' });
+      }
     }
 
-    if (['store_manager', 'employee'].includes(req.user.role) && product.storeId.toString() !== req.user.storeId.toString()) {
-      return res.status(403).json({
-        message: 'Accès refusé à ce produit'
-      });
+    if (['store_manager', 'employee'].includes(req.user.role)) {
+      const userStoreId = (req.user.store && req.user.store._id) ? req.user.store._id.toString() : (req.user.store ? req.user.store.toString() : undefined);
+      if (!userStoreId || product.storeId.toString() !== userStoreId) {
+        return res.status(403).json({ message: 'Accès refusé à ce produit' });
+      }
     }
 
     const updatedProduct = await Product.findByIdAndUpdate(
@@ -515,7 +537,7 @@ router.get('/categories', authenticate, async (req, res) => {
         query.companyId = req.query.companyId;
       }
     } else {
-      query.companyId = req.user.companyId;
+      query.companyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
     }
 
     const categories = await Category.find(query)
@@ -554,11 +576,12 @@ router.post('/categories', authenticate, checkPermission('canManageInventory'), 
 
     const { name, description, parentId, sortOrder, icon, color } = req.body;
 
+    const userCompanyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
     const category = new Category({
       name,
       description,
       parentId,
-      companyId: req.user.companyId,
+      companyId: userCompanyId,
       sortOrder: sortOrder || 0,
       icon,
       color: color || '#1D4ED8'
@@ -594,12 +617,12 @@ router.get('/stats', authenticate, checkPermission('canViewReports'), async (req
 
     // Filtrer selon le rôle
     if (req.user.role === 'company_admin') {
-      matchStage.companyId = req.user.companyId;
+      matchStage.companyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
       if (req.query.storeId) {
         matchStage.storeId = req.query.storeId;
       }
     } else if (['store_manager', 'employee'].includes(req.user.role)) {
-      matchStage.storeId = req.user.storeId;
+      matchStage.storeId = (req.user.store && req.user.store._id) ? req.user.store._id : req.user.store;
     }
 
     const stats = await Product.aggregate([
@@ -686,12 +709,12 @@ router.get('/search', authenticate, async (req, res) => {
 
     // Filtrer selon le rôle
     if (req.user.role === 'company_admin') {
-      filters.companyId = req.user.companyId;
+      filters.companyId = (req.user.company && req.user.company._id) ? req.user.company._id : req.user.company;
       if (storeId) {
         filters.storeId = storeId;
       }
     } else if (['store_manager', 'employee'].includes(req.user.role)) {
-      filters.storeId = req.user.storeId;
+      filters.storeId = (req.user.store && req.user.store._id) ? req.user.store._id : req.user.store;
     }
 
     if (categoryId) {

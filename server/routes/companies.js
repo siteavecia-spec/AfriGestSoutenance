@@ -438,10 +438,10 @@ router.delete('/:id', authenticate, authorize('super_admin'), async (req, res) =
 // @access  Private
 router.get('/:id/stores', authenticate, async (req, res) => {
   try {
-    if (!['super_admin', 'company_admin'].includes(req.user.role)) {
+    if (!['super_admin', 'company_admin', 'dg'].includes(req.user.role)) {
       return res.status(403).json({ message: 'Accès refusé' });
     }
-    if (req.user.role === 'company_admin' && normalizeId(req.user.company) !== req.params.id) {
+    if (['company_admin','dg'].includes(req.user.role) && normalizeId(req.user.company) !== req.params.id) {
       return res.status(403).json({ message: 'Accès refusé' });
     }
     const stores = await Store.find({ companyId: req.params.id })
